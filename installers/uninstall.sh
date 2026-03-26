@@ -46,10 +46,16 @@ RM_WINGS="${RM_WINGS:-true}"
 rm_panel_files() {
   output "Removing panel files..."
   rm -rf /var/www/pterodactyl /usr/local/bin/composer
-  [ "$OS" != "centos" ] && [ -L /etc/nginx/sites-enabled/pterodactyl.conf ] && unlink /etc/nginx/sites-enabled/pterodactyl.conf
-  [ "$OS" != "centos" ] && [ -f /etc/nginx/sites-available/pterodactyl.conf ] && rm -f /etc/nginx/sites-available/pterodactyl.conf
-  [ "$OS" != "centos" ] && [ ! -L /etc/nginx/sites-enabled/default ] && [ -f /etc/nginx/sites-available/default ] && ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-  [ "$OS" == "centos" ] && [ -f /etc/nginx/conf.d/pterodactyl.conf ] && rm -f /etc/nginx/conf.d/pterodactyl.conf
+  case "$OS" in
+  centos | rocky | almalinux | arch)
+    [ -f /etc/nginx/conf.d/pterodactyl.conf ] && rm -f /etc/nginx/conf.d/pterodactyl.conf
+    ;;
+  *)
+    [ -L /etc/nginx/sites-enabled/pterodactyl.conf ] && unlink /etc/nginx/sites-enabled/pterodactyl.conf
+    [ -f /etc/nginx/sites-available/pterodactyl.conf ] && rm -f /etc/nginx/sites-available/pterodactyl.conf
+    [ ! -L /etc/nginx/sites-enabled/default ] && [ -f /etc/nginx/sites-available/default ] && ln -s /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+    ;;
+  esac
   systemctl restart nginx
   success "Removed panel files."
 }
@@ -82,10 +88,16 @@ rm_services() {
   debian | ubuntu)
     systemctl disable --now redis-server
     ;;
-  centos)
+  centos | rocky | almalinux)
     systemctl disable --now redis
     systemctl disable --now php-fpm
     rm -rf /etc/php-fpm.d/www-pterodactyl.conf
+    ;;
+  arch)
+    systemctl disable --now redis
+    systemctl disable --now php-fpm
+    rm -rf /etc/php/php-fpm.d/www-pterodactyl.conf
+    rm -f /etc/tmpfiles.d/php-fpm-pterodactyl.conf
     ;;
   esac
   success "Removed services."

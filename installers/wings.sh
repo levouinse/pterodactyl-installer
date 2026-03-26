@@ -63,6 +63,12 @@ fi
 # ----------- Installation functions ----------- #
 
 enable_services() {
+  if [ "$INSTALL_MARIADB" == true ] && [ "$OS" == "arch" ]; then
+    # Only initialize if not already done
+    if [ ! -d "/var/lib/mysql/mysql" ]; then
+      mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
+    fi
+  fi
   [ "$INSTALL_MARIADB" == true ] && systemctl enable mariadb
   [ "$INSTALL_MARIADB" == true ] && systemctl start mariadb
   systemctl start docker
@@ -93,6 +99,17 @@ dep_install() {
     [ "$CONFIGURE_LETSENCRYPT" == true ] && install_packages "epel-release"
 
     install_packages "device-mapper-persistent-data lvm2"
+    ;;
+
+  arch)
+    # Docker is in official repos
+    install_packages "docker"
+    [ "$INSTALL_MARIADB" == true ] && install_packages "mariadb"
+    [ "$CONFIGURE_LETSENCRYPT" == true ] && install_packages "certbot"
+    
+    enable_services
+    success "Dependencies installed!"
+    return
     ;;
   esac
 
@@ -183,11 +200,14 @@ configure_mysql() {
       sed -i 's/127.0.0.1/0.0.0.0/g' /etc/mysql/mariadb.conf.d/50-server.cnf
       ;;
     rocky | almalinux)
-      sed -ne 's/^#bind-address=0.0.0.0$/bind-address=0.0.0.0/' /etc/my.cnf.d/mariadb-server.cnf
+      sed -i 's/^#bind-address=0.0.0.0$/bind-address=0.0.0.0/' /etc/my.cnf.d/mariadb-server.cnf
+      ;;
+    arch)
+      sed -i 's/^#bind-address=127.0.0.1$/bind-address=0.0.0.0/' /etc/my.cnf.d/server.cnf
       ;;
     esac
 
-    systemctl restart mysqld
+    systemctl restart mariadb
   fi
 
   success "MySQL configured!"

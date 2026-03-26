@@ -254,6 +254,13 @@ update_repos() {
       # Skip since these distros auto-refresh metadata
       output "Skipping repository update (handled automatically on $OS)."
       ;;
+    arch)
+      output "Updating package repositories..."
+      if ! pacman -Sy --noconfirm; then
+        error "Failed to update repositories."
+        return 1
+      fi
+      ;;
     *)
       warning "Unsupported OS: $OS — skipping repository update."
       ;;
@@ -267,6 +274,7 @@ install_packages() {
   if [[ $2 == true ]]; then
     case "$OS" in
     ubuntu | debian) args="-qq" ;;
+    arch) args="-q" ;;
     *) args="-q" ;;
     esac
   fi
@@ -278,6 +286,9 @@ install_packages() {
     ;;
   rocky | almalinux)
     eval dnf -y $args install "$1"
+    ;;
+  arch)
+    eval pacman -S --noconfirm --needed $args "$1"
     ;;
   esac
 }
@@ -354,75 +365,112 @@ password_input() {
 
 # ------------------ Firewall ------------------ #
 
+detect_firewall() {
+  if [ -x "$(command -v ufw)" ]; then
+    echo "ufw"
+  elif [ -x "$(command -v firewall-cmd)" ]; then
+    echo "firewalld"
+  elif [ -x "$(command -v nft)" ]; then
+    echo "nftables"
+  else
+    echo "none"
+  fi
+}
+
 ask_firewall() {
   local __resultvar=$1
+  local fw_type=$(detect_firewall)
 
-  case "$OS" in
-  ubuntu | debian)
+  case "$fw_type" in
+  ufw)
     echo -e -n "* Do you want to automatically configure UFW (firewall)? (y/N): "
-    read -r CONFIRM_UFW
-
-    if [[ "$CONFIRM_UFW" =~ [Yy] ]]; then
-      eval "$__resultvar="'true'""
-    fi
     ;;
-  rocky | almalinux)
+  firewalld)
     echo -e -n "* Do you want to automatically configure firewall-cmd (firewall)? (y/N): "
-    read -r CONFIRM_FIREWALL_CMD
-
-    if [[ "$CONFIRM_FIREWALL_CMD" =~ [Yy] ]]; then
-      eval "$__resultvar="'true'""
-    fi
+    ;;
+  nftables)
+    echo -e -n "* Do you want to automatically configure nftables (firewall)? (y/N): "
+    ;;
+  none)
+    case "$OS" in
+    ubuntu | debian)
+      echo -e -n "* Do you want to install and configure UFW (firewall)? (y/N): "
+      ;;
+    rocky | almalinux)
+      echo -e -n "* Do you want to install and configure firewall-cmd (firewall)? (y/N): "
+      ;;
+    arch)
+      echo -e -n "* Do you want to install and configure nftables (firewall)? (y/N): "
+      ;;
+    esac
     ;;
   esac
+
+  read -r CONFIRM_FW
+  if [[ "$CONFIRM_FW" =~ [Yy] ]]; then
+    eval "$__resultvar="'true'""
+  fi
 }
 
 install_firewall() {
+  local fw_type=$(detect_firewall)
+
+  if [ "$fw_type" != "none" ]; then
+    output "Firewall already installed: $fw_type"
+    return
+  fi
+
   case "$OS" in
   ubuntu | debian)
-    output ""
-    output "Installing Uncomplicated Firewall (UFW)"
-
-    if ! [ -x "$(command -v ufw)" ]; then
-      update_repos true
-      install_packages "ufw" true
-    fi
-
+    output "Installing UFW"
+    update_repos true
+    install_packages "ufw" true
     ufw --force enable
-
-    success "Enabled Uncomplicated Firewall (UFW)"
-
+    success "Enabled UFW"
     ;;
   rocky | almalinux)
-
-    output ""
-    output "Installing FirewallD"+
-
-    if ! [ -x "$(command -v firewall-cmd)" ]; then
-      install_packages "firewalld" true
-    fi
-
+    output "Installing FirewallD"
+    install_packages "firewalld" true
     systemctl --now enable firewalld >/dev/null
-
     success "Enabled FirewallD"
-
+    ;;
+  arch)
+    output "Installing nftables"
+    install_packages "nftables" true
+    systemctl --now enable nftables >/dev/null
+    success "Enabled nftables"
     ;;
   esac
 }
 
 firewall_allow_ports() {
-  case "$OS" in
-  ubuntu | debian)
+  local fw_type=$(detect_firewall)
+
+  case "$fw_type" in
+  ufw)
     for port in $1; do
       ufw allow "$port"
     done
     ufw --force reload
     ;;
-  rocky | almalinux)
+  firewalld)
     for port in $1; do
       firewall-cmd --zone=public --add-port="$port"/tcp --permanent
     done
     firewall-cmd --reload -q
+    ;;
+  nftables)
+    for port in $1; do
+      nft add rule inet filter input tcp dport "$port" accept 2>/dev/null || {
+        nft add table inet filter 2>/dev/null
+        nft add chain inet filter input { type filter hook input priority 0 \; policy accept\; } 2>/dev/null
+        nft add rule inet filter input tcp dport "$port" accept
+      }
+    done
+    nft list ruleset > /etc/nftables.conf
+    ;;
+  none)
+    warning "No firewall detected, skipping port configuration"
     ;;
   esac
 }
@@ -553,6 +601,10 @@ rocky | almalinux)
   [ "$OS_VER_MAJOR" == "8" ] && SUPPORTED=true
   [ "$OS_VER_MAJOR" == "9" ] && SUPPORTED=true
   ;;
+arch)
+  SUPPORTED=true
+  EXPERIMENTAL=true
+  ;;
 *)
   SUPPORTED=false
   ;;
@@ -563,4 +615,15 @@ if [ "$SUPPORTED" == false ]; then
   output "$OS $OS_VER is not supported"
   error "Unsupported OS"
   exit 1
+fi
+
+# warn if experimental
+if [ "$EXPERIMENTAL" == true ]; then
+  warning "EXPERIMENTAL: $OS support is experimental and may not work as expected."
+  echo -e -n "* Do you want to continue? (y/N): "
+  read -r CONFIRM_EXPERIMENTAL
+  if [[ ! "$CONFIRM_EXPERIMENTAL" =~ [Yy] ]]; then
+    error "Installation aborted!"
+    exit 1
+  fi
 fi

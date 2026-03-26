@@ -66,6 +66,9 @@ dep_install() {
   rocky | almalinux)
     install_packages "bind-utils" true
     ;;
+  arch)
+    install_packages "bind" true
+    ;;
   esac
 
   return 0

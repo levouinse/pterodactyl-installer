@@ -163,7 +163,7 @@ set_folder_permissions() {
   debian | ubuntu)
     chown -R www-data:www-data ./*
     ;;
-  rocky | almalinux)
+  rocky | almalinux | arch)
     chown -R nginx:nginx ./*
     ;;
   esac
@@ -174,7 +174,7 @@ insert_cronjob() {
 
   crontab -l | {
     cat
-    output "* * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1"
+    output "* * * * * php /var/www/pterodactyl/artisan schedule:run >> /dev/null 2>&1"
   } | crontab -
 
   success "Cronjob installed!"
@@ -189,7 +189,7 @@ install_pteroq() {
   debian | ubuntu)
     sed -i -e "s@<user>@www-data@g" /etc/systemd/system/pteroq.service
     ;;
-  rocky | almalinux)
+  rocky | almalinux | arch)
     sed -i -e "s@<user>@nginx@g" /etc/systemd/system/pteroq.service
     ;;
   esac
@@ -212,8 +212,17 @@ enable_services() {
     systemctl enable redis
     systemctl start redis
     ;;
+  arch)
+    systemctl enable redis
+    systemctl start redis
+    # Only initialize if not already done
+    if [ ! -d "/var/lib/mysql/mysql" ]; then
+      mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
+    fi
+    ;;
   esac
   systemctl enable nginx
+  systemctl start nginx
   systemctl enable mariadb
   systemctl start mariadb
 }
@@ -225,7 +234,17 @@ selinux_allow() {
 }
 
 php_fpm_conf() {
-  curl -o /etc/php-fpm.d/www-pterodactyl.conf "$GITHUB_URL"/configs/www-pterodactyl.conf
+  case "$OS" in
+  rocky | almalinux)
+    curl -o /etc/php-fpm.d/www-pterodactyl.conf "$GITHUB_URL"/configs/www-pterodactyl.conf
+    ;;
+  arch)
+    curl -o /etc/php/php-fpm.d/www-pterodactyl.conf "$GITHUB_URL"/configs/www-pterodactyl.conf
+    # Create socket directory with tmpfiles.d for persistence across reboots
+    echo "d /var/run/php-fpm 0755 nginx nginx -" > /etc/tmpfiles.d/php-fpm-pterodactyl.conf
+    systemd-tmpfiles --create /etc/tmpfiles.d/php-fpm-pterodactyl.conf
+    ;;
+  esac
 
   systemctl enable php-fpm
   systemctl start php-fpm
@@ -306,6 +325,32 @@ dep_install() {
     # Create config for php fpm
     php_fpm_conf
     ;;
+  arch)
+    # Install dependencies
+    install_packages "php php-fpm php-gd php-intl \
+      mariadb \
+      nginx \
+      redis \
+      zip unzip tar \
+      git cronie \
+      composer"
+
+    [ "$CONFIGURE_LETSENCRYPT" == true ] && install_packages "certbot certbot-nginx"
+
+    # Enable required PHP extensions
+    sed -i 's/;extension=bcmath/extension=bcmath/' /etc/php/php.ini
+    sed -i 's/;extension=curl/extension=curl/' /etc/php/php.ini
+    sed -i 's/;extension=openssl/extension=openssl/' /etc/php/php.ini
+    sed -i 's/;extension=pdo_mysql/extension=pdo_mysql/' /etc/php/php.ini
+    sed -i 's/;extension=zip/extension=zip/' /etc/php/php.ini
+    sed -i 's/;extension=gd/extension=gd/' /etc/php/php.ini
+    sed -i 's/;extension=intl/extension=intl/' /etc/php/php.ini
+    sed -i 's/;extension=mbstring/extension=mbstring/' /etc/php/php.ini
+    sed -i 's/;extension=xml/extension=xml/' /etc/php/php.ini
+
+    # Create config for php fpm
+    php_fpm_conf
+    ;;
   esac
 
   enable_services
@@ -367,7 +412,7 @@ configure_nginx() {
     CONFIG_PATH_AVAIL="/etc/nginx/sites-available"
     CONFIG_PATH_ENABL="/etc/nginx/sites-enabled"
     ;;
-  rocky | almalinux)
+  rocky | almalinux | arch)
     PHP_SOCKET="/var/run/php-fpm/pterodactyl.sock"
     CONFIG_PATH_AVAIL="/etc/nginx/conf.d"
     CONFIG_PATH_ENABL="$CONFIG_PATH_AVAIL"
@@ -388,7 +433,8 @@ configure_nginx() {
     ;;
   esac
 
-  if [ "$ASSUME_SSL" == false ] && [ "$CONFIGURE_LETSENCRYPT" == false ]; then
+  # Always restart nginx to load new config, unless Let's Encrypt will do it
+  if [ "$CONFIGURE_LETSENCRYPT" == false ]; then
     systemctl restart nginx
   fi
 
@@ -400,7 +446,7 @@ configure_nginx() {
 perform_install() {
   output "Starting installation.. this might take a while!"
   dep_install
-  install_composer
+  [ "$OS" != "arch" ] && install_composer
   ptdl_dl
   install_composer_deps
   create_db_user "$MYSQL_USER" "$MYSQL_PASSWORD"

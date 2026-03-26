@@ -2,6 +2,34 @@
 
 This project follows the [semantic versioning](https://semver.org) convention. Changelog points should be divided into fixed, changed, or added.
 
+## v1.3.0 (unreleased)
+
+### Fixed
+
+- panel: Fix PHP-FPM socket directory persistence on Arch Linux using systemd tmpfiles.d
+- panel: Fix nginx service not starting automatically on Arch Linux
+- panel: Fix nginx not restarting when ASSUME_SSL=true
+- panel: Add missing openssl PHP extension for Arch Linux
+- lib: Add Arch Linux support in verify-fqdn.sh for DNS utilities (bind package)
+- uninstall: Add tmpfiles.d cleanup for Arch Linux
+
+### Added
+
+- all: Add experimental Arch Linux support with pacman package manager
+- lib: Implement unified firewall abstraction layer supporting UFW, firewalld, and nftables
+- lib: Add automatic firewall detection with `detect_firewall()` function
+- panel: Add Arch Linux dependency installation with PHP 8.3+, MariaDB, nginx, redis
+- panel: Add systemd tmpfiles.d configuration for PHP-FPM socket directory
+- wings: Add Arch Linux Docker installation support
+- all: Add experimental OS warning prompt for Arch Linux
+
+### Changed
+
+- lib: Refactor firewall functions to use unified interface across all distributions
+- lib: Update package management functions to support pacman (Arch Linux)
+- panel: Improve nginx restart logic to handle ASSUME_SSL and CONFIGURE_LETSENCRYPT cases
+- README: Document firewall abstraction layer and Arch Linux experimental support
+
 ## v1.2.0 (released on 2025-09-24)
 
 ### Fixed

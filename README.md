@@ -48,6 +48,7 @@ List of supported installation setups for panel and Wings (installations support
 |                  | 9       | :white_check_mark: | 8.3         |
 | AlmaLinux        | 8       | :white_check_mark: | 8.3         |
 |                  | 9       | :white_check_mark: | 8.3         |
+| Arch Linux       | Rolling | :white_check_mark: | 8.3+        |
 
 _\* Indicates an operating system and release that previously was supported by this script._
 
@@ -55,8 +56,19 @@ _\* Indicates an operating system and release that previously was supported by t
 
 To use the installation scripts, simply run this command as root. The script will ask you whether you would like to install just the panel, just Wings or both.
 
+**Using curl:**
 ```bash
-bash <(curl -s https://pterodactyl-installer.se)
+bash <(curl -s https://raw.githubusercontent.com/levouinse/pterodactyl-installer/master/install.sh)
+```
+
+**Using wget:**
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/levouinse/pterodactyl-installer/master/install.sh)
+```
+
+**Alternative (custom domain):**
+```bash
+bash <(curl -s https://panel.andifarel.biz.id/install.sh)
 ```
 
 _Note: On some systems, it's required to be already logged in as root before executing the one-line command (where `sudo` is in front of the command does not work)._
@@ -66,6 +78,13 @@ Here is a [YouTube video](https://www.youtube.com/watch?v=E8UJhyUFoHM) that illu
 ## Firewall setup
 
 The installation scripts can install and configure a firewall for you. The script will ask whether you want this or not. It is highly recommended to opt-in for the automatic firewall setup.
+
+The script supports multiple firewall systems:
+- **UFW** (Uncomplicated Firewall) - Default for Ubuntu/Debian
+- **firewalld** - Default for Rocky Linux/AlmaLinux
+- **nftables** - Default for Arch Linux
+
+The firewall abstraction layer automatically detects which firewall system is available and configures it appropriately.
 
 ## Development & Ops
 
